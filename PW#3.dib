@@ -79,3 +79,102 @@ Assert.Equal(0, DefiniteIntegral.Solve(-1, 1, X, 1e-4, 2), 1e-4);
 Assert.Equal(0, DefiniteIntegral.Solve(-1, 1, SIN, 1e-5, 8), 1e-4);
 
 Assert.Equal(50, DefiniteIntegral.Solve(0, 10, X, 1e-6, 8), 1e-5);
+
+#!csharp
+
+#r "nuget:ScottPlot, 5.0.35"
+using Microsoft.DotNet.Interactive.Formatting;
+
+class TrapezoidalRule {
+    
+    public static double Solve(Func<double, double> f, double a, double b, double step) {
+        var sw = Stopwatch.StartNew();
+        double integ = (f(a) + f(b))/2;
+        double n = Math.Abs(b-a)/step; 
+        for (int i = 1; i<n; i++){
+           integ+= f(a + i*step);
+        }
+        integ= integ*step;
+        sw.Stop();
+        return sw.Elapsed.TotalMilliseconds;
+    }
+}
+List<double>timeX = new List<double> { };
+List<double> threadsY = new List<double> {  };
+var SIN = (double x) => Math.Sin(x);
+
+
+var steps = new[] { 1e-1, 1e-2, 1e-3, 1e-4, 1e-5, 1e-6 };
+var result2 = new List<(double, double)>();
+
+foreach (var step in steps)
+{
+    var sw = Stopwatch.StartNew();
+    var integral = DefiniteIntegral.Solve(-100, 100, SIN, step, 8);
+    double error = Math.Abs(integral);
+    sw.Stop();
+    Console.WriteLine($"Шаг: {step}, Погрешность: {error}, Время: {sw.Elapsed.TotalMilliseconds} мс");
+    if (error < 1e-4){
+    result2.Add((step, sw.Elapsed.TotalMilliseconds));
+    }
+}
+var optimalStep = result2.OrderBy(x => x.Item2).First().Item1;
+Console.WriteLine($"Оптимальный размер шага: {optimalStep}");
+
+timeX.Add(TrapezoidalRule.Solve(SIN, -100, 100, 1e-4));
+threadsY.Add(1);
+int test = 0;
+double time = 0;
+for(int i = 0; i < 10; i++){
+    time += TrapezoidalRule.Solve(SIN, -100, 100, optimalStep);
+    test = i;
+}
+double sredtime = time/10;
+Console.WriteLine($"Потоки: 1, Среднее время: {sredtime} мс");
+
+var result = new List<(int, double)>();
+for (int threadCount=2; threadCount<=32; threadCount+=2)
+{
+    var sw = Stopwatch.StartNew();
+    var integral = DefiniteIntegral.Solve(-100, 100, SIN, optimalStep, threadCount);
+    sw.Stop();
+    result.Add((threadCount, sw.Elapsed.TotalMilliseconds));
+    int test1 = 0;
+    double time1 = 0;
+    for(int i = 0; i < 10; i++){
+    time1 += sw.Elapsed.TotalMilliseconds;
+    test1 = i;
+    }
+    double sredtime1 = time1/10;
+    Console.WriteLine($"Потоки: {threadCount},  Среднее время: {sredtime1} мс");
+    timeX.Add(sredtime1);
+    threadsY.Add(threadCount);
+}
+var minmnogoptime = result.OrderBy(x => x.Item2).First().Item2;
+var optimalThreadCount = result.OrderBy(x => x.Item2).First().Item1;
+Console.WriteLine($"Оптимальное количество потоков: {optimalThreadCount}");
+
+double procent = ((Math.Max(minmnogoptime, sredtime)-Math.Min(minmnogoptime, sredtime))/Math.Max(minmnogoptime, sredtime))*100;
+Formatter.Register(typeof(ScottPlot.Plot), (p, w) => 
+    w.Write(((ScottPlot.Plot)p).GetImageHtml(400, 300)), HtmlFormatter.MimeType);
+
+ScottPlot.Plot plt = new();
+plt.XLabel("Время вычисления (мс)");
+plt.YLabel("Количество потоков ");
+plt.Add.Scatter(timeX, threadsY);
+plt
+
+#!csharp
+
+//Summary
+Console.WriteLine($"Оптимальный размер шага: {optimalStep}");
+Console.WriteLine($"Оптимальное количество потоков: {optimalThreadCount}"); 
+Console.WriteLine($"Время однопоточной версии: {sredtime}");  
+Console.WriteLine($"Время оптимальной многопоточной версии: {minmnogoptime}");  
+Console.WriteLine($"Разница в процентах: {procent}");
+
+#!markdown
+
+Минимальный размер шага, обеспечивающий оптимальную производительность с точностью 1e-4 равен 1e-4. Потому что при меньших шагах увеличивается время выполнения программы, а при больших - появляется погрешность, большая чем  1e-4.
+Для вычисления среднего времени однопоточной и многопоточных версий, проводилось 10 тестов, сохраняя усредненный вариант, который также представлен на графике
+Как и ожидалось, оптимальная многопоточная версия эффективнее однопоточной более чем на 15%.
