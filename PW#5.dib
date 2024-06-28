@@ -59,8 +59,41 @@ using System.Collections.Concurrent;
 
 var queue1 = new BlockingCollection<Message>(2); //очередь первого потока
 var queue2 = new BlockingCollection<Message>(2); //очередь второго потока
+int count = 100;
+Barrier barrier = new Barrier(2);
 
-// Здесь писать решение
+Thread potok1 = new Thread(() =>
+{
+    for (int i = 0; i < count; i++)
+    {
+        Message msg = queue1.Take();
+        msg.Handle();
+        queue2.Add(new Message());
+        barrier.SignalAndWait();
+    }
+});
+
+Thread potok2 = new Thread(() =>
+{
+    for (int i = 0; i < count; i++)
+    {
+        Message msg = queue2.Take();
+        msg.Handle();
+        if (i!=(count-1))
+        {
+            queue1.Add(new Message());
+        }
+        barrier.SignalAndWait();
+    }
+});
+
+queue1.Add(new Message());
+
+potok1.Start();
+potok2.Start();
+
+potok1.Join();
+potok2.Join();
 
 #!csharp
 
