@@ -17,10 +17,123 @@
 
 #!csharp
 
+using System.Collections.Concurrent;
+using System.Threading;
+
 public interface ICommand
 {
     void Execute();
 }
+
+public class HardStopCommand : ICommand
+{
+    public void Execute()
+    {
+        Console.WriteLine("Выполняется HardStop");
+        throw new ThreadInterruptedException();
+    }
+}
+
+public class SoftStopCommand : ICommand
+{
+    public void Execute()
+    {
+        Console.WriteLine("Выполняется SoftStop");
+    }
+}
+
+public class ServerThread
+{
+    private ConcurrentQueue<ICommand> commands = new ConcurrentQueue<ICommand>();
+    private Thread thread;
+    private bool isRunning = false;
+
+    public ServerThread()
+    {
+        thread = new Thread(Run);
+        thread.Start();
+    }
+
+    public void EnqueueCommand(ICommand command)
+    {
+        commands.Enqueue(command);
+    }
+
+    public void HardStop()
+    {
+        if (Thread.CurrentThread == thread)
+        {
+            EnqueueCommand(new HardStopCommand());
+        }
+        else
+        {
+            throw new InvalidOperationException("HardStop может быть вызван только в текущем потоке");
+        }
+    }
+
+    public void SoftStop()
+    {
+        if (Thread.CurrentThread == thread)
+        {
+            EnqueueCommand(new SoftStopCommand());
+        }
+        else
+        {
+            throw new InvalidOperationException("SoftStop может быть вызван только в текущем потоке");
+        }
+    }
+
+    private void Run()
+    {
+        isRunning = true;
+        try
+        {
+            while (isRunning)
+            {
+                if (commands.TryDequeue(out ICommand command))
+                {
+                    try
+                    {
+                        command.Execute();
+                    }
+                    catch (ThreadInterruptedException)
+                    {
+                        Console.WriteLine("Поток завершен");
+                        isRunning = false;
+                        break;
+                    }
+                }
+                else
+                {
+                    Thread.Sleep(100); 
+                }
+            }
+        }
+        finally
+        {
+            isRunning = false;
+        }   
+    }
+    public Thread GetThread() => thread;
+}
+
+public class PrintCommand : ICommand
+{
+    public void Execute()
+    {
+        Console.WriteLine("Команда выполнена");
+    }
+}
+
+var serverThread = new ServerThread();
+serverThread.EnqueueCommand(new PrintCommand());
+serverThread.EnqueueCommand(new PrintCommand());
+serverThread.EnqueueCommand(new SoftStopCommand());
+serverThread.EnqueueCommand(new PrintCommand());
+serverThread.EnqueueCommand(new HardStopCommand());
+serverThread.EnqueueCommand(new PrintCommand());
+
+serverThread.GetThread().Join();
 
 #!markdown
 
