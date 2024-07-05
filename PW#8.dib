@@ -110,6 +110,29 @@ public class ServerThread
     {
         newCommands.Enqueue(command);
     }
+    public void HardStop()
+    {
+        if (Thread.CurrentThread == thread)
+        {
+            EnqueueCommand(new HardStopCommand());
+        }
+        else
+        {
+            throw new InvalidOperationException("HardStop может быть вызван только в текущем потоке");
+        }
+    }
+
+    public void SoftStop()
+    {
+        if (Thread.CurrentThread == thread)
+        {
+            EnqueueCommand(new SoftStopCommand());
+        }
+        else
+        {
+            throw new InvalidOperationException("SoftStop может быть вызван только в текущем потоке");
+        }
+    }
     private void Run()
 {
     isRunning = true;
