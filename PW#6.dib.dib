@@ -39,8 +39,157 @@
 
 #!markdown
 
-// здесь писать код
+#r "nuget:ScottPlot, 5.0.35"
+using Microsoft.DotNet.Interactive.Formatting;
+using System.Threading;
+using System.Diagnostics;
+using System.Collections.Concurrent;
+
+var BlockingCollection = new BlockingCollection<object>();
+var ConcurrentQueue = new ConcurrentQueue<object>();
+var Queue = new Queue();
+Stopwatch sw = new Stopwatch();
+
+Formatter.Register(typeof(ScottPlot.Plot), (p, w) => 
+    w.Write(((ScottPlot.Plot)p).GetImageHtml(400, 300)), HtmlFormatter.MimeType);
+    
+ScottPlot.Plot plt = new();
+plt.XLabel("Итерации");
+plt.YLabel("Время");
+
+ScottPlot.Plot plt1 = new();
+ScottPlot.Plot plt2 = new();
+
+const int Count = 1000000;
+int NumTest = 10;
+
+double TestBlockingCollection()
+    {
+        var bcY = new List<double>();
+        List<double> iteratsX = new List<double> { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 };
+        for (int i = 0; i <  NumTest; i++)
+        {
+            var bc = new BlockingCollection<int>();
+            var readyEvent = new ManualResetEvent(false);
+            var stopwatch = new Stopwatch();
+
+            var  aThread = new Thread(() =>
+            {
+                readyEvent.WaitOne();
+                stopwatch.Start();
+                for (int j = 0; j < Count; j++)
+                {
+                    bc.Add(j);
+                }
+                stopwatch.Stop();
+            });
+
+            var bThread = new Thread(() =>
+            {
+                readyEvent.Set();
+                while (bc.Count < Count) { }
+                while (bc.Take() != Count - 1) { }
+            });
+
+            aThread.Start();
+            bThread.Start();
+            aThread.Join();
+            bThread.Join();
+
+            bcY.Add(stopwatch.Elapsed.TotalMilliseconds);
+        }
+
+        Console.WriteLine($"Среднее время BlockingCollection: {bcY.Average()}мс");
+        var graph1 = plt.Add.Scatter(iteratsX.ToArray(), bcY.ToArray());
+        graph1.LegendText = "BlockingCollection";
+        return bcY.Average();
+    }
+    double TestConcurrentQueue()
+    {var cqY = new List<double>();
+    List<double> iteratsX = new List<double> { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 };
+
+    for (int i = 0; i < NumTest; i++)
+    {
+        var cq = new ConcurrentQueue<int>();
+        var readyEvent = new ManualResetEvent(false);
+        var stopwatch = new Stopwatch();
+
+        var aThread = new Thread(() =>
+        {
+            readyEvent.WaitOne();
+            stopwatch.Start();
+            for (int j = 0; j <  Count; j++)
+            {
+                cq.Enqueue(j);
+            }
+            stopwatch.Stop();
+        });
+
+        var bThread = new Thread(() =>
+        {
+            readyEvent.Set();
+            int x;
+            while (cq.Count < Count) { }
+            while (cq.TryDequeue(out x) && x != Count - 1) { }
+        });
+
+        aThread.Start();
+        bThread.Start();
+        aThread.Join();
+        bThread.Join();
+
+        cqY.Add(stopwatch.Elapsed.TotalMilliseconds);
+    }
+    var graph2 = plt.Add.Scatter(iteratsX.ToArray(), cqY.ToArray());
+    graph2.LegendText = "ConcurrentQueue";
+    Console.WriteLine($"Среднее время ConcurrentQueue: {cqY.Average()}мс");
+    return cqY.Average();
+}
+void TestNotSafeQueue()
+    {
+        List<double> iteratsX = new List<double> { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 };
+        var results = new List<double>();
+        for (int i = 0; i < NumTest; i++)
+        {
+            var queue = new Queue<int>();
+            var stopwatch = new Stopwatch();
+
+            stopwatch.Start();
+            for (int j = 0; j < Count; j++)
+            {
+                queue.Enqueue(j);
+            }
+            stopwatch.Stop();
+            var enqueueTime = stopwatch.Elapsed.TotalMilliseconds;
+
+            stopwatch.Restart();
+            while (queue.Count > 0)
+            {
+                queue.Dequeue();
+            }
+            stopwatch.Stop();
+            var dequeueTime = stopwatch.Elapsed.TotalMilliseconds;
+
+            results.Add(enqueueTime + dequeueTime);
+        }
+        var graph3 = plt.Add.Scatter(iteratsX.ToArray(), results.ToArray());
+        graph3.LegendText = "Непотокобезопасная очередь";
+        Console.WriteLine($"Среднее время непотокобезопасной очереди: {results.Average()}мс");
+        var minimum = Math.Min(TestBlockingCollection(), TestConcurrentQueue());
+        double procent = ((minimum - results.Average())/results.Average())*100;
+        Console.WriteLine($"Среднее время самой быстрой потоко-безопасной коллекции (ConcurrentQueue) составляет: {procent}% от времени обычной очереди");
+    }
+TestNotSafeQueue();
+
+plt.ShowLegend(ScottPlot.Edge.Bottom);
+plt
 
 #!markdown
 
 ## Вывод
+Самая эффективная из потоко-безопасных коллекций - ConcurrentQueue. 
+Один из тестов:
+Среднее время непотокобезопасной очереди: 28.031500000000005мс
+Среднее время BlockingCollection: 286.45333мс
+Среднее время ConcurrentQueue: 57.59493000000001мс
+Среднее время самой быстрой потокобезопасной коллекции (ConcurrentQueue) составляет: 105.46503041221484% от времени обычной очереди
